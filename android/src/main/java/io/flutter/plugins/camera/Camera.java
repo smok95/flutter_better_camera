@@ -81,8 +81,7 @@ public class Camera {
   private final Size previewSize;
   private final boolean enableAudio;
   private final boolean mFlashSupported;
-  private final boolean mEnableAutoExposure
-          ;
+  private final boolean mEnableAutoExposure;
 
   private CameraDevice cameraDevice;
   private CameraCaptureSession mCaptureSession;
@@ -130,7 +129,8 @@ public class Camera {
       final boolean enableAudio,
       final boolean autoFocusEnabled,
       final boolean enableAutoExposure,
-      final int flashMode
+      final int flashMode,
+      final double initialZoom
   )
       throws CameraAccessException {
     if (activity == null) {
@@ -145,6 +145,7 @@ public class Camera {
     this.mAutoFocus = autoFocusEnabled;
     this.mEnableAutoExposure = enableAutoExposure;
     this.mFlash = flashMode;
+    this.zoomLevel = (float)initialZoom;
 
     orientationEventListener =
         new OrientationEventListener(activity.getApplicationContext()) {
@@ -506,26 +507,34 @@ public class Camera {
     }
   }
   public void captureStillPicture(String filePath, @NonNull final Result result) {
-    final File file = new File(filePath);
 
+    // Set Image bytes to Result, if filePath is null or empty
+    final File file = (filePath != null && !filePath.isEmpty()) ? new File(filePath) : null;
 
-    if (file.exists()) {
-      result.error(
-          "fileExists", "File at path '" + filePath + "' already exists. Cannot overwrite.", null);
+    if (file != null && file.exists()) {
+      result.error("fileExists", "File at path '" + filePath + "' already exists. Cannot overwrite.", null);
       return;
     }
 
     pictureImageReader.setOnImageAvailableListener(
-        reader -> {
-          try (Image image = reader.acquireLatestImage()) {
-            ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-            writeToFile(buffer, file);
-            result.success(null);
-          } catch (IOException e) {
-            result.error("IOError", "Failed saving image", null);
-          }
-        },
-        null);
+            reader -> {
+              try (Image image = reader.acquireLatestImage()) {
+                ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+
+                if(file == null) {
+                  // Set bytes to result
+                  byte[] imageBytes = new byte[buffer.remaining()];
+                  buffer.get(imageBytes);
+                  result.success(imageBytes);
+                }
+                else {
+                  writeToFile(buffer, file);
+                }
+              } catch (IOException e) {
+                result.error("IOError", "Failed saving image", null);
+              }
+            },
+            null);
 
     try {
       final CaptureRequest.Builder captureBuilder =
@@ -534,6 +543,8 @@ public class Camera {
 
       captureBuilder.set(CaptureRequest.CONTROL_AF_MODE,
               mPreviewRequestBuilder.get(CaptureRequest.CONTROL_AF_MODE));
+
+      setScalerCropRegion(captureBuilder, zoom);
 
       if(mFlashSupported) {
         switch (mFlash) {
@@ -649,6 +660,12 @@ public class Camera {
                 mPreviewRequestBuilder.set(
                         CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Camera.this.aeFPSRange);
               }
+
+              if(zoomLevel > 1.0) {
+                calculateZoom(zoomLevel);
+                setScalerCropRegion(mPreviewRequestBuilder, zoom);
+              }
+
               mPreviewRequestBuilder.set(
                   CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
               mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), mCaptureCallback, null);
@@ -672,7 +689,10 @@ public class Camera {
     // Collect all surfaces we want to render to.
     List<Surface> surfaceList = new ArrayList<>();
     surfaceList.add(flutterSurface);
-    surfaceList.addAll(remainingSurfaces);
+
+    if(templateType != CameraDevice.TEMPLATE_PREVIEW) {
+      surfaceList.addAll(remainingSurfaces);
+    }
     // Start the session
     cameraDevice.createCaptureSession(surfaceList, callback, null);
   }
@@ -908,6 +928,36 @@ public class Camera {
             imageStreamReader.setOnImageAvailableListener(null, null);
           }
         });
+  }
+
+  public void pausePreview(Result result) {
+    Log.d(TAG, "pausePreview");
+    boolean paused = false;
+    if (mCaptureSession != null) {
+      try {
+        //mCaptureSession.stopRepeating();
+        mCaptureSession.abortCaptures();
+        paused = true;
+
+      } catch (CameraAccessException e) {
+        e.printStackTrace();
+      }
+    }
+    result.success(paused);
+  }
+
+  public void resumePreview(Result result) {
+    Log.d(TAG, "resumePreview");
+    boolean resumed = false;
+    if(mCaptureSession != null) {
+      try {
+        mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), null, null);
+        resumed = true;
+      } catch (CameraAccessException e) {
+        e.printStackTrace();
+      }
+    }
+    result.success(resumed);
   }
 
   private void setImageStreamImageAvailableListener(final EventChannel.EventSink imageStreamSink) {

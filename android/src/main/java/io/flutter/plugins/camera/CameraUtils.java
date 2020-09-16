@@ -25,6 +25,7 @@ public final class CameraUtils {
   private CameraUtils() {}
 
   static Size computeBestPreviewSize(String cameraName, ResolutionPreset preset) {
+
     if (preset.ordinal() > ResolutionPreset.high.ordinal()) {
       preset = ResolutionPreset.high;
     }
@@ -65,6 +66,10 @@ public final class CameraUtils {
           details.put("lensFacing", "external");
           break;
       }
+
+      Float maxZoom = characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+      details.put("scalerAvailableMaxDigitalZoom", maxZoom);
+
       cameras.add(details);
     }
     return cameras;

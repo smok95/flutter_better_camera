@@ -176,6 +176,16 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
         result.success(hasFlash());
         break;
       }
+      case "pausePreview":
+      {
+        camera.pausePreview(result);
+        break;
+      }
+      case "resumePreview":
+      {
+        camera.resumePreview(result);
+        break;
+      }
 
       case "dispose":
         {
@@ -209,6 +219,7 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
     boolean autoFocusEnabled = call.argument("autoFocusEnabled");
     boolean enableAutoExposure = call.argument("enableAutoExposure");
     int flashMode = call.argument("flashMode");
+    double initialZoom = call.argument("initialZoom");
 
     TextureRegistry.SurfaceTextureEntry flutterSurfaceTexture =
         textureRegistry.createSurfaceTexture();
@@ -223,7 +234,8 @@ final class MethodCallHandlerImpl implements MethodChannel.MethodCallHandler {
             enableAudio,
                 autoFocusEnabled,
                 enableAutoExposure,
-                flashMode);
+                flashMode,
+                initialZoom);
 
     camera.open(result);
   }
